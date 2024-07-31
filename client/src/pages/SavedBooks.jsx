@@ -1,64 +1,49 @@
-import React from "react";
-import { Container, Card, Button, Row, Col } from "react-bootstrap";
-
+import { Container, Card, Button, Row, Col, Alert } from "react-bootstrap";
 import { useQuery, useMutation } from "@apollo/client";
-import { GET_ME } from "../utils/queries";
-import { REMOVE_BOOK } from "../utils/mutations";
 import Auth from "../utils/auth";
 import { removeBookId } from "../utils/localStorage";
+import { GET_ME } from "../utils/queries";
+import { REMOVE_BOOK } from "../utils/mutations";
 
 const SavedBooks = () => {
-  const { loading, data } = useQuery(GET_ME);
-  const [removeBook] = useMutation(REMOVE_BOOK);
+  const { loading, error, data, refetch } = useQuery(GET_ME);
+  const [removeBook, { error: removeBookError }] = useMutation(REMOVE_BOOK);
 
   const userData = data?.me || {};
 
-  // create function that accepts the book's mongo _id value as param and deletes the book from the database.
   const handleDeleteBook = async (bookId) => {
-    if (!Auth.loggedIn()) {
+    const token = Auth.loggedIn() ? Auth.getToken() : null;
+
+    if (!token) {
       return false;
     }
 
     try {
       const { data } = await removeBook({
         variables: { bookId },
-        update: (cache) => {
-          const { me } = cache.readQuery({ query: GET_ME });
-          cache.writeQuery({
-            query: GET_ME,
-            data: {
-              me: {
-                ...me,
-                savedBooks: me.savedBooks.filter(
-                  (book) => book.bookId !== bookId
-                ),
-              },
-            },
-          });
-        },
       });
 
-      // Check if the mutation was successful.
-      if (data && data.removeBook) {
-        // upon success, remove book's id from localStorage.
+      if (data) {
         removeBookId(bookId);
-      } else {
-        throw new Error("Failed to remove book");
+        refetch(); // Refetch the user data to update the UI
       }
     } catch (err) {
       console.error(err);
     }
   };
 
-  // if data isn't here yet, say so.
   if (loading) {
     return <h2>LOADING...</h2>;
   }
 
+  if (error) {
+    return <Alert variant="danger">Error: {error.message}</Alert>;
+  }
+
   return (
     <>
-      <div className="text-light bg-dark p-5 container-fluid">
-        <Container>
+      <div className="text-light bg-dark p-5">
+        <Container fluid>
           <h1>Viewing saved books!</h1>
         </Container>
       </div>
@@ -70,6 +55,11 @@ const SavedBooks = () => {
               }:`
             : "You have no saved books!"}
         </h2>
+        {removeBookError && (
+          <Alert variant="danger">
+            Error removing book: {removeBookError.message}
+          </Alert>
+        )}
         <Row>
           {userData.savedBooks?.map((book) => {
             return (
@@ -84,7 +74,7 @@ const SavedBooks = () => {
                   ) : null}
                   <Card.Body>
                     <Card.Title>{book.title}</Card.Title>
-                    <p className="small">Authors: {book.authors}</p>
+                    <p className="small">Authors: {book.authors.join(", ")}</p>
                     <Card.Text>{book.description}</Card.Text>
                     <Button
                       className="btn-block btn-danger"
